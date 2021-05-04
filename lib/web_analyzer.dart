@@ -189,7 +189,7 @@ class WebAnalyzer {
           ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36"
           : "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1"
       ..headers["cache-control"] = "no-cache"
-      ..headers["Cookie"] = cookie ?? _cookies[uri.host]!
+      // ..headers["Cookie"] = cookie ?? _cookies[uri.host]!
       ..headers["accept"] = "*/*";
     // print(request.headers);
     final stream = await client.send(request);
