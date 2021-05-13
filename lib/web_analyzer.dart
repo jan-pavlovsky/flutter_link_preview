@@ -28,14 +28,9 @@ class WebImageInfo extends InfoBase {
   WebImageInfo({this.image});
 }
 
-/// Video Information
-class WebVideoInfo extends WebImageInfo {
-  WebVideoInfo({String? image}) : super(image: image);
-}
-
 /// Web analyzer
 class WebAnalyzer {
-  static final Map<String?, InfoBase> _map = {};
+  static final Map<String, InfoBase> _map = {};
   static final RegExp _bodyReg =
       RegExp(r"<body[^>]*>([\s\S]*?)<\/body>", caseSensitive: false);
   static final RegExp _htmlReg = RegExp(
@@ -57,11 +52,12 @@ class WebAnalyzer {
 
   /// Get web information
   /// return [InfoBase]
-  static InfoBase? getInfoFromCache(String? url) {
+  static InfoBase? getInfoFromCache(String url) {
     final InfoBase? info = _map[url];
     if (info != null) {
       if (!info._timeout.isAfter(DateTime.now())) {
         _map.remove(url);
+        return null;
       }
     }
     return info;
@@ -69,21 +65,15 @@ class WebAnalyzer {
 
   /// Get web information
   /// return [InfoBase]
-  static Future<InfoBase?> getInfo(String? url,
-      {Duration cache = const Duration(hours: 24),
-      bool multimedia = true,
-      bool useMultithread = false}) async {
+  static Future<InfoBase?> getInfo(String url,
+      {Duration cache = const Duration(hours: 24)}) async {
     // final start = DateTime.now();
 
     InfoBase? info = getInfoFromCache(url);
     if (info != null) return info;
     try {
-      if (useMultithread)
-        info = await _getInfoByIsolate(url, multimedia);
-      else
-        info = await _getInfo(url!, multimedia);
-
-      if (cache != null && info != null) {
+      info = await _getInfo(url);
+      if (info != null) {
         info._timeout = DateTime.now().add(cache);
         _map[url] = info;
       }
@@ -96,141 +86,28 @@ class WebAnalyzer {
     return info;
   }
 
-  static Future<InfoBase?> _getInfo(String url, bool? multimedia) async {
+  static Future<InfoBase?> _getInfo(String url) async {
     final response = await _requestUrl(url);
 
     if (response == null) return null;
-    // print("$url ${response.statusCode}");
-    if (multimedia!) {
-      final String? contentType = response.headers["content-type"];
-      if (contentType != null) {
-        if (contentType.contains("image/")) {
-          return WebImageInfo(image: url);
-        } else if (contentType.contains("video/")) {
-          return WebVideoInfo(image: url);
-        }
+    final String? contentType = response.headers["content-type"];
+    if (contentType != null) {
+      if (contentType.contains("image/")) {
+        return WebImageInfo(image: url);
       }
     }
 
-    return _getWebInfo(response, url, multimedia);
+    return _getWebInfo(response, url);
   }
 
-  static Future<InfoBase?> _getInfoByIsolate(
-      String? url, bool multimedia) async {
-    final sender = ReceivePort();
-    final Isolate isolate = await Isolate.spawn(_isolate, sender.sendPort);
-    final sendPort = await sender.first as SendPort;
-    final answer = ReceivePort();
+  static Future<Response?> _requestUrl(String url) async {
+    Response res = await get(Uri.parse(url));
 
-    sendPort.send([answer.sendPort, url, multimedia]);
-    final List<String>? res = await (answer.first as FutureOr<List<String>?>);
-
-    InfoBase? info;
-    if (res != null) {
-      if (res[0] == "0") {
-        info = WebInfo(
-            title: res[1], description: res[2], icon: res[3], image: res[4]);
-      } else if (res[0] == "1") {
-        info = WebVideoInfo(image: res[1]);
-      } else if (res[0] == "2") {
-        info = WebImageInfo(image: res[1]);
-      }
-    }
-
-    sender.close();
-    answer.close();
-    isolate.kill(priority: Isolate.immediate);
-
-    return info;
-  }
-
-  static void _isolate(SendPort sendPort) {
-    final port = ReceivePort();
-    sendPort.send(port.sendPort);
-    port.listen((message) async {
-      final SendPort? sender = message[0];
-      final String url = message[1];
-      final bool? multimedia = message[2];
-
-      final info = await _getInfo(url, multimedia);
-
-      if (info is WebInfo) {
-        sender!
-            .send(["0", info.title, info.description, info.icon, info.image]);
-      } else if (info is WebVideoInfo) {
-        sender!.send(["1", info.image]);
-      } else if (info is WebImageInfo) {
-        sender!.send(["2", info.image]);
-      } else {
-        sender!.send(null);
-      }
-      port.close();
-    });
-  }
-
-  static final Map<String, String> _cookies = {
-    "weibo.com":
-        "YF-Page-G0=02467fca7cf40a590c28b8459d93fb95|1596707497|1596707497; SUB=_2AkMod12Af8NxqwJRmf8WxGjna49_ygnEieKeK6xbJRMxHRl-yT9kqlcftRB6A_dzb7xq29tqJiOUtDsy806R_ZoEGgwS; SUBP=0033WrSXqPxfM72-Ws9jqgMF55529P9D9W59fYdi4BXCzHNAH7GabuIJ"
-  };
-
-  static bool _certificateCheck(X509Certificate cert, String host, int port) =>
-      true;
-
-  static Future<Response?> _requestUrl(String url,
-      {int count = 0, String? cookie, useDesktopAgent = true}) async {
-    if (url.contains("m.toutiaoimg.cn")) useDesktopAgent = false;
-    Response? res;
-    final uri = Uri.parse(url);
-    final ioClient = HttpClient()..badCertificateCallback = _certificateCheck;
-    final client = IOClient(ioClient);
-    final request = Request('GET', uri)
-      ..followRedirects = false
-      ..headers["User-Agent"] = useDesktopAgent
-          ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36"
-          : "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1"
-      ..headers["cache-control"] = "no-cache"
-      // ..headers["Cookie"] = cookie ?? _cookies[uri.host]!
-      ..headers["accept"] = "*/*";
-    // print(request.headers);
-    final stream = await client.send(request);
-
-    if (stream.statusCode == HttpStatus.movedTemporarily ||
-        stream.statusCode == HttpStatus.movedPermanently) {
-      if (stream.isRedirect && count < 6) {
-        final String? location = stream.headers['location'];
-        if (location != null) {
-          url = location;
-          if (location.startsWith("/")) {
-            url = uri.origin + location;
-          }
-        }
-        if (stream.headers['set-cookie'] != null) {
-          cookie = stream.headers['set-cookie'];
-        }
-        count++;
-        client.close();
-        // print("Redirect ====> $url");
-        return _requestUrl(url, count: count, cookie: cookie);
-      }
-    } else if (stream.statusCode == HttpStatus.ok) {
-      res = await Response.fromStream(stream);
-      if (uri.host == "m.tb.cn") {
-        final match = RegExp(r"var url = \'(.*)\'").firstMatch(res.body);
-        if (match != null) {
-          final newUrl = match.group(1);
-          if (newUrl != null) {
-            return _requestUrl(newUrl, count: count, cookie: cookie);
-          }
-        }
-      }
-    }
-    client.close();
-    if (res == null) print("Get web info empty($url)");
+    if (res.statusCode != 200) print("Get web info not 200 ($url)");
     return res;
   }
 
-  static Future<InfoBase?> _getWebInfo(
-      Response response, String url, bool? multimedia) async {
+  static Future<InfoBase?> _getWebInfo(Response response, String url) async {
     if (response.statusCode == HttpStatus.ok) {
       String? html;
       try {
@@ -255,20 +132,11 @@ class WebAnalyzer {
       // print("dom cost ${DateTime.now().difference(start).inMilliseconds}");
       final uri = Uri.parse(url);
 
-      // get image or video
-      if (multimedia!) {
-        final gif = _analyzeGif(document, uri);
-        if (gif != null) return gif;
-
-        final video = _analyzeVideo(document, uri);
-        if (video != null) return video;
-      }
-
-      String? title = _analyzeTitle(document);
+      String title = _analyzeTitle(document);
       String? description =
           _analyzeDescription(document, html)?.replaceAll(r"\x0a", " ");
       if (!isNotEmpty(title)) {
-        title = description;
+        title = description ?? "";
         description = null;
       }
 
@@ -288,28 +156,13 @@ class WebAnalyzer {
     html = html.replaceFirst(_bodyReg, "<body></body>");
     final matchs = _metaReg.allMatches(html);
     final StringBuffer head = StringBuffer("<html><head>");
-    if (matchs != null) {
-      matchs.forEach((element) {
-        final String str = element.group(0)!;
-        if (str.contains(_titleReg)) head.writeln(str);
-      });
-    }
+    matchs.forEach((element) {
+      final String str = element.group(0)!;
+      if (str.contains(_titleReg)) head.writeln(str);
+    });
+
     head.writeln("</head></html>");
     return head.toString();
-  }
-
-  static InfoBase? _analyzeGif(Document document, Uri uri) {
-    if (_getMetaContent(document, "property", "og:image:type") == "image/gif") {
-      final gif = _getMetaContent(document, "property", "og:image");
-      if (gif != null) return WebImageInfo(image: _handleUrl(uri, gif));
-    }
-    return null;
-  }
-
-  static InfoBase? _analyzeVideo(Document document, Uri uri) {
-    final video = _getMetaContent(document, "property", "og:video");
-    if (video != null) return WebVideoInfo(image: _handleUrl(uri, video));
-    return null;
   }
 
   static String? _getMetaContent(
@@ -327,7 +180,7 @@ class WebAnalyzer {
     final list = document.head!.getElementsByTagName("title");
     if (list.isNotEmpty) {
       final tagTitle = list.first.text;
-      if (tagTitle != null) return tagTitle.trim();
+      return tagTitle.trim();
     }
     return "";
   }
@@ -349,7 +202,7 @@ class WebAnalyzer {
       // print("html cost ${DateTime.now().difference(start).inMilliseconds}");
       return body;
     }
-    return description;
+    return description!;
   }
 
   static String? _analyzeIcon(Document document, Uri uri) {
