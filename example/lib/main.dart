@@ -115,14 +115,14 @@ class _MyHomePageState extends State<MyHomePage> {
                 ],
               ),
               const SizedBox(height: 15),
-              FlutterLinkPreview(
-                key: ValueKey(_controller.value.text),
-                url: _controller.value.text,
-                titleStyle: const TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              // FlutterLinkPreview(
+              //   key: ValueKey(_controller.value.text),
+              //   url: _controller.value.text,
+              //   titleStyle: const TextStyle(
+              //     color: Colors.blue,
+              //     fontWeight: FontWeight.bold,
+              //   ),
+              // ),
               const SizedBox(height: 50),
               const Text("Custom Builder", style: TextStyle(fontSize: 20)),
               const Divider(),
